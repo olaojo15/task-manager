@@ -89,7 +89,7 @@
   .capture-bar button{padding:0 18px;border-radius:8px;border:none;background:var(--accent);
     color:var(--accent-ink);font-weight:700;font-size:14px;cursor:pointer;}
 
-  main.board{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;
+  main.board{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:start;
     padding:16px calc(20px + env(safe-area-inset-right)) 40px calc(20px + env(safe-area-inset-left));
     max-width:1100px;margin:0 auto;}
   @media (max-width:980px){ main.board{grid-template-columns:1fr 1fr;} }
@@ -109,15 +109,23 @@
     display:flex;flex-direction:column;min-height:120px;}
   .column-head{display:flex;align-items:center;justify-content:space-between;
     padding:12px 14px;border-bottom:1px solid var(--border);}
+  .column-head.collapsible{cursor:pointer;user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}
+  .column-head.collapsible:hover{background:color-mix(in srgb, var(--bg) 45%, transparent);}
   .column-head .title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;
     letter-spacing:.02em;text-transform:uppercase;}
+  .col-chevron{color:var(--muted);font-size:11px;transition:transform .15s;flex:none;}
+  .column.collapsed{min-height:0;}
+  .column.collapsed .col-chevron{transform:rotate(-90deg);}
+  .column.collapsed .column-body{display:none;}
   .dot{width:8px;height:8px;border-radius:50%;}
   .dot.capture{background:var(--capture);}
   .dot.priority{background:var(--priority);}
   .dot.today{background:var(--today);}
   .dot.done{background:var(--done);}
   .count{color:var(--muted);font-weight:600;font-size:12px;}
-  .column-body{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:60px;}
+  .column-body{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:60px;
+    max-height:55vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
   .column-body.dragover{background:color-mix(in srgb, var(--accent) 8%, transparent);
     border-radius:8px;}
   .empty-hint{color:var(--muted);font-size:13px;padding:18px 8px;text-align:center;}
@@ -270,22 +278,25 @@
 
   <main class="board">
     <section class="column" id="col-capture">
-      <div class="column-head">
+      <div class="column-head collapsible">
         <div class="title"><span class="dot capture"></span>Capture<span class="count" id="count-capture"></span></div>
+        <span class="col-chevron">▾</span>
       </div>
       <div class="column-body" id="body-capture" data-bucket="capture"></div>
     </section>
 
     <section class="column" id="col-priority">
-      <div class="column-head">
+      <div class="column-head collapsible">
         <div class="title"><span class="dot priority"></span>Priority<span class="count" id="count-priority"></span></div>
+        <span class="col-chevron">▾</span>
       </div>
       <div class="column-body" id="body-priority" data-bucket="priority"></div>
     </section>
 
     <section class="column" id="col-today">
-      <div class="column-head">
+      <div class="column-head collapsible">
         <div class="title"><span class="dot today"></span>Today<span class="count" id="count-today"></span></div>
+        <span class="col-chevron">▾</span>
       </div>
       <div class="column-body" id="body-today" data-bucket="today"></div>
     </section>
@@ -373,6 +384,7 @@
   const LS_PASSCODE_HASH = "tm_passcode_hash";
   const LS_CONFIG = "tm_config"; // {owner, repo, branch, path, token}
   const LS_CACHE = "tm_cache";   // last-known tasks JSON, offline fallback
+  const LS_COLLAPSED = "tm_collapsed"; // per-column collapse state, device-local UI preference
   const SS_UNLOCKED = "tm_unlocked";
 
   const $ = (id) => document.getElementById(id);
@@ -959,6 +971,22 @@
   });
   $("subtask-new-input").addEventListener("keydown", (e) => {
     if(e.key === "Enter"){ e.preventDefault(); $("subtask-add-btn").click(); }
+  });
+
+  /* ---------------- Column collapse/expand ---------------- */
+  function getCollapsed(){
+    try{ return JSON.parse(localStorage.getItem(LS_COLLAPSED) || "{}"); }catch(e){ return {}; }
+  }
+  const collapsedState = getCollapsed();
+  [ "capture", "priority", "today" ].forEach(bucket => {
+    const col = $("col-" + bucket);
+    if(collapsedState[bucket]) col.classList.add("collapsed");
+    col.querySelector(".column-head").addEventListener("click", () => {
+      col.classList.toggle("collapsed");
+      const state = getCollapsed();
+      state[bucket] = col.classList.contains("collapsed");
+      localStorage.setItem(LS_COLLAPSED, JSON.stringify(state));
+    });
   });
 
   /* Drag & drop onto columns */
