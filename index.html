@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Capture → Today</title>
+<title>Capture → Priority → Today</title>
 <style>
   :root{
     --bg:#f5f4f1; --panel:#ffffff; --border:#e2e0da; --text:#1f1d1a; --muted:#7a766d;
     --accent:#2f6f4f; --accent-ink:#ffffff; --danger:#b3432c; --warn:#c98a1f;
-    --capture:#6b6459; --today:#2f6f4f; --done:#8a8579;
+    --capture:#6b6459; --priority:#b3832c; --today:#2f6f4f; --done:#8a8579;
     --radius:10px; --shadow:0 1px 2px rgba(0,0,0,0.06), 0 1px 1px rgba(0,0,0,0.04);
   }
   @media (prefers-color-scheme: dark){
     :root{
       --bg:#17181a; --panel:#212226; --border:#33353a; --text:#eceae5; --muted:#96938b;
       --accent:#5fb98a; --accent-ink:#0d1512; --danger:#e07a5f; --warn:#e0b04f;
-      --capture:#9b968a; --today:#5fb98a; --done:#75726a;
+      --capture:#9b968a; --priority:#e0ab4f; --today:#5fb98a; --done:#75726a;
       --shadow:0 1px 2px rgba(0,0,0,0.3), 0 1px 1px rgba(0,0,0,0.2);
     }
   }
@@ -74,8 +74,9 @@
   .capture-bar button{padding:0 18px;border-radius:8px;border:none;background:var(--accent);
     color:var(--accent-ink);font-weight:700;font-size:14px;cursor:pointer;}
 
-  main.board{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 20px 40px;
+  main.board{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;padding:16px 20px 40px;
     max-width:1100px;margin:0 auto;}
+  @media (max-width:980px){ main.board{grid-template-columns:1fr 1fr;} }
   @media (max-width:760px){ main.board{grid-template-columns:1fr;} }
 
   .column{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
@@ -86,6 +87,7 @@
     letter-spacing:.02em;text-transform:uppercase;}
   .dot{width:8px;height:8px;border-radius:50%;}
   .dot.capture{background:var(--capture);}
+  .dot.priority{background:var(--priority);}
   .dot.today{background:var(--today);}
   .dot.done{background:var(--done);}
   .count{color:var(--muted);font-weight:600;font-size:12px;}
@@ -204,7 +206,7 @@
 <!-- ============ APP ============ -->
 <div id="app">
   <header class="topbar">
-    <h1>Capture → Today</h1>
+    <h1>Capture → Priority → Today</h1>
     <div class="topbar-actions">
       <div class="sync-status"><span class="sync-dot" id="sync-dot"></span><span id="sync-text">idle</span></div>
       <button class="icon-btn" id="export-btn" title="Download backup JSON">⬇</button>
@@ -225,9 +227,16 @@
       <div class="column-body" id="body-capture" data-bucket="capture"></div>
     </section>
 
+    <section class="column" id="col-priority">
+      <div class="column-head">
+        <div class="title"><span class="dot priority"></span>Priority<span class="count" id="count-priority"></span></div>
+      </div>
+      <div class="column-body" id="body-priority" data-bucket="priority"></div>
+    </section>
+
     <section class="column" id="col-today">
       <div class="column-head">
-        <div class="title"><span class="dot today"></span>Priority / Today<span class="count" id="count-today"></span></div>
+        <div class="title"><span class="dot today"></span>Today<span class="count" id="count-today"></span></div>
       </div>
       <div class="column-body" id="body-today" data-bucket="today"></div>
     </section>
@@ -365,6 +374,11 @@
 
   function uid(){
     return "t_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,8);
+  }
+
+  const BUCKET_ORDER = ["capture","priority","today"];
+  function bucketLabel(b){
+    return b === "capture" ? "Capture" : b === "priority" ? "Priority" : b === "today" ? "Today" : b;
   }
 
   function todayStr(){
@@ -610,12 +624,23 @@
     actions.className = "task-actions";
 
     if(t.bucket !== "done"){
-      const moveBtn = document.createElement("button");
-      moveBtn.className = "mini-btn";
-      moveBtn.textContent = t.bucket === "capture" ? "→ Today" : "← Capture";
-      moveBtn.title = t.bucket === "capture" ? "Move to Today" : "Move back to Capture";
-      moveBtn.addEventListener("click", () => moveTask(t.id, t.bucket === "capture" ? "today" : "capture"));
-      actions.appendChild(moveBtn);
+      const idx = BUCKET_ORDER.indexOf(t.bucket);
+      if(idx > 0){
+        const backBtn = document.createElement("button");
+        backBtn.className = "mini-btn";
+        backBtn.textContent = "← " + bucketLabel(BUCKET_ORDER[idx-1]);
+        backBtn.title = "Move back to " + bucketLabel(BUCKET_ORDER[idx-1]);
+        backBtn.addEventListener("click", () => moveTask(t.id, BUCKET_ORDER[idx-1]));
+        actions.appendChild(backBtn);
+      }
+      if(idx < BUCKET_ORDER.length - 1){
+        const fwdBtn = document.createElement("button");
+        fwdBtn.className = "mini-btn";
+        fwdBtn.textContent = "→ " + bucketLabel(BUCKET_ORDER[idx+1]);
+        fwdBtn.title = "Move to " + bucketLabel(BUCKET_ORDER[idx+1]);
+        fwdBtn.addEventListener("click", () => moveTask(t.id, BUCKET_ORDER[idx+1]));
+        actions.appendChild(fwdBtn);
+      }
     }
 
     const delBtn = document.createElement("button");
@@ -665,7 +690,7 @@
   }
 
   function sortCapture(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); }
-  function sortToday(a,b){
+  function sortByPriorityDue(a,b){
     if(a.priority !== b.priority) return a.priority ? -1 : 1;
     if(!a.due && !b.due) return new Date(a.createdAt) - new Date(b.createdAt);
     if(!a.due) return 1;
@@ -676,14 +701,17 @@
 
   function render(){
     const capture = state.tasks.filter(t => t.bucket === "capture").sort(sortCapture);
-    const today = state.tasks.filter(t => t.bucket === "today").sort(sortToday);
+    const priority = state.tasks.filter(t => t.bucket === "priority").sort(sortByPriorityDue);
+    const today = state.tasks.filter(t => t.bucket === "today").sort(sortByPriorityDue);
     const done = state.tasks.filter(t => t.bucket === "done").sort(sortDone);
 
     fillColumn("body-capture", capture, "Nothing captured. Type above to add something.");
-    fillColumn("body-today", today, "Nothing prioritised yet — move things over from Capture.");
+    fillColumn("body-priority", priority, "Nothing prioritised yet — move things over from Capture.");
+    fillColumn("body-today", today, "Nothing in Today yet — move things over from Priority.");
     fillColumn("body-done", done, "Nothing done yet.");
 
     $("count-capture").textContent = capture.length ? `(${capture.length})` : "";
+    $("count-priority").textContent = priority.length ? `(${priority.length})` : "";
     $("count-today").textContent = today.length ? `(${today.length})` : "";
     $("count-done").textContent = done.length;
     $("count-done-2").textContent = done.length ? `(${done.length})` : "";
@@ -703,7 +731,7 @@
   }
 
   /* Drag & drop onto columns */
-  [ "body-capture", "body-today", "body-done" ].forEach(id => {
+  [ "body-capture", "body-priority", "body-today", "body-done" ].forEach(id => {
     const el = $(id);
     el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("dragover"); });
     el.addEventListener("dragleave", () => el.classList.remove("dragover"));
