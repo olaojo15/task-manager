@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Capture → Today</title>
+<style>
+  :root{
+    --bg:#f5f4f1; --panel:#ffffff; --border:#e2e0da; --text:#1f1d1a; --muted:#7a766d;
+    --accent:#2f6f4f; --accent-ink:#ffffff; --danger:#b3432c; --warn:#c98a1f;
+    --capture:#6b6459; --today:#2f6f4f; --done:#8a8579;
+    --radius:10px; --shadow:0 1px 2px rgba(0,0,0,0.06), 0 1px 1px rgba(0,0,0,0.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17181a; --panel:#212226; --border:#33353a; --text:#eceae5; --muted:#96938b;
+      --accent:#5fb98a; --accent-ink:#0d1512; --danger:#e07a5f; --warn:#e0b04f;
+      --capture:#9b968a; --today:#5fb98a; --done:#75726a;
+      --shadow:0 1px 2px rgba(0,0,0,0.3), 0 1px 1px rgba(0,0,0,0.2);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  body{min-height:100vh;}
+  button{font-family:inherit;}
+  input,textarea{font-family:inherit;}
+
+  /* ---------- Lock / Setup screens ---------- */
+  .center-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:28px;width:100%;max-width:380px;}
+  .card h1{font-size:18px;margin:0 0 4px;}
+  .card p.sub{color:var(--muted);font-size:13px;margin:0 0 20px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .field input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:7px;
+    background:var(--bg);color:var(--text);font-size:14px;}
+  .field input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:9px 14px;border-radius:7px;border:1px solid transparent;font-size:14px;
+    cursor:pointer;font-weight:600;}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);width:100%;}
+  .btn-primary:hover{opacity:0.92;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn-danger{background:transparent;border:1px solid var(--danger);color:var(--danger);}
+  .error-msg{color:var(--danger);font-size:13px;margin-top:10px;min-height:16px;}
+  .hint{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.5;}
+  .hint a{color:var(--accent);}
+  hr.sep{border:none;border-top:1px solid var(--border);margin:18px 0;}
+
+  /* ---------- App shell ---------- */
+  #app{display:none;}
+  header.topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 20px;border-bottom:1px solid var(--border);background:var(--panel);
+    position:sticky;top:0;z-index:20;}
+  header.topbar h1{font-size:16px;margin:0;font-weight:700;}
+  .sync-status{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+  .sync-dot.ok{background:var(--accent);}
+  .sync-dot.busy{background:var(--warn);}
+  .sync-dot.err{background:var(--danger);}
+  .topbar-actions{display:flex;align-items:center;gap:10px;}
+  .icon-btn{background:transparent;border:1px solid var(--border);border-radius:7px;
+    width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:var(--text);font-size:15px;}
+  .icon-btn:hover{background:var(--bg);}
+
+  .capture-bar{display:flex;gap:8px;padding:14px 20px;background:var(--panel);
+    border-bottom:1px solid var(--border);}
+  .capture-bar input[type=text]{flex:1;padding:11px 12px;border:1px solid var(--border);
+    border-radius:8px;background:var(--bg);color:var(--text);font-size:15px;}
+  .capture-bar input[type=text]:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  .capture-bar button{padding:0 18px;border-radius:8px;border:none;background:var(--accent);
+    color:var(--accent-ink);font-weight:700;font-size:14px;cursor:pointer;}
+
+  main.board{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 20px 40px;
+    max-width:1100px;margin:0 auto;}
+  @media (max-width:760px){ main.board{grid-template-columns:1fr;} }
+
+  .column{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    display:flex;flex-direction:column;min-height:120px;}
+  .column-head{display:flex;align-items:center;justify-content:space-between;
+    padding:12px 14px;border-bottom:1px solid var(--border);}
+  .column-head .title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;
+    letter-spacing:.02em;text-transform:uppercase;}
+  .dot{width:8px;height:8px;border-radius:50%;}
+  .dot.capture{background:var(--capture);}
+  .dot.today{background:var(--today);}
+  .dot.done{background:var(--done);}
+  .count{color:var(--muted);font-weight:600;font-size:12px;}
+  .column-body{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:60px;}
+  .column-body.dragover{background:color-mix(in srgb, var(--accent) 8%, transparent);
+    border-radius:8px;}
+  .empty-hint{color:var(--muted);font-size:13px;padding:18px 8px;text-align:center;}
+
+  .task{background:var(--bg);border:1px solid var(--border);border-radius:8px;
+    padding:10px 10px 8px;cursor:grab;}
+  .task.dragging{opacity:0.4;}
+  .task.priority{border-left:3px solid var(--warn);}
+  .task-row{display:flex;align-items:flex-start;gap:8px;}
+  .task-check{width:19px;height:19px;border-radius:50%;border:2px solid var(--muted);
+    background:transparent;flex:none;cursor:pointer;margin-top:1px;}
+  .task-check:hover{border-color:var(--accent);}
+  .task.done .task-check{background:var(--done);border-color:var(--done);}
+  .task-text{flex:1;font-size:14.5px;line-height:1.4;outline:none;word-break:break-word;
+    padding:1px 2px;border-radius:4px;}
+  .task-text:focus{background:var(--panel);box-shadow:0 0 0 2px var(--accent);}
+  .task.done .task-text{text-decoration:line-through;color:var(--muted);}
+  .task-meta{display:flex;align-items:center;gap:6px;margin-top:6px;padding-left:27px;
+    flex-wrap:wrap;}
+  .due-chip{font-size:11.5px;padding:2px 7px;border-radius:20px;border:1px solid var(--border);
+    color:var(--muted);cursor:pointer;background:var(--panel);}
+  .due-chip.overdue{color:var(--danger);border-color:var(--danger);}
+  .due-chip.today-due{color:var(--warn);border-color:var(--warn);}
+  .due-input{font-size:11.5px;padding:2px 6px;border-radius:6px;border:1px solid var(--border);
+    background:var(--panel);color:var(--text);}
+  .star-btn{background:transparent;border:none;cursor:pointer;font-size:14px;color:var(--muted);
+    padding:1px 3px;}
+  .star-btn.on{color:var(--warn);}
+  .task-actions{margin-left:auto;display:flex;gap:2px;}
+  .mini-btn{background:transparent;border:none;cursor:pointer;color:var(--muted);
+    font-size:13px;padding:2px 5px;border-radius:5px;}
+  .mini-btn:hover{background:var(--panel);color:var(--text);}
+  .mini-btn.del:hover{color:var(--danger);}
+
+  .archive-toggle{display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:8px;margin:2px 10px 10px;border-radius:6px;border:1px dashed var(--border);
+    color:var(--muted);font-size:12.5px;cursor:pointer;}
+  .archive-toggle:hover{background:var(--bg);}
+
+  /* ---------- Settings modal ---------- */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;
+    align-items:center;justify-content:center;z-index:50;padding:16px;}
+  .modal-backdrop.show{display:flex;}
+  .modal{background:var(--panel);border-radius:var(--radius);max-width:420px;width:100%;
+    padding:24px;max-height:90vh;overflow:auto;}
+  .modal h2{font-size:16px;margin:0 0 16px;}
+  .modal-actions{display:flex;gap:8px;margin-top:18px;}
+  .modal-actions .btn{flex:1;}
+
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:var(--text);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;
+    opacity:0;pointer-events:none;transition:opacity .25s;z-index:100;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOCK SCREEN ============ -->
+<div id="lock-screen" class="center-screen">
+  <div class="card">
+    <h1 id="lock-title">Enter passcode</h1>
+    <p class="sub" id="lock-sub">This board is private. Enter your passcode to continue.</p>
+    <div class="field">
+      <label for="passcode-input">Passcode</label>
+      <input type="password" id="passcode-input" autocomplete="off" inputmode="text">
+    </div>
+    <button class="btn btn-primary" id="unlock-btn">Unlock</button>
+    <div class="error-msg" id="lock-error"></div>
+  </div>
+</div>
+
+<!-- ============ FIRST-RUN SETUP SCREEN ============ -->
+<div id="setup-screen" class="center-screen" style="display:none;">
+  <div class="card" style="max-width:420px;">
+    <h1>Set up this device</h1>
+    <p class="sub">One-time setup. Your tasks are stored as a JSON file in your own GitHub repo — this device needs to know where, and how to authenticate.</p>
+
+    <div class="field">
+      <label for="setup-passcode">Choose a passcode</label>
+      <input type="password" id="setup-passcode" autocomplete="off">
+    </div>
+    <hr class="sep">
+    <div class="field">
+      <label for="gh-owner">GitHub username</label>
+      <input type="text" id="gh-owner" placeholder="e.g. olaojo15">
+    </div>
+    <div class="field">
+      <label for="gh-repo">Repository name</label>
+      <input type="text" id="gh-repo" placeholder="e.g. task-manager">
+    </div>
+    <div class="field">
+      <label for="gh-branch">Branch</label>
+      <input type="text" id="gh-branch" value="main">
+    </div>
+    <div class="field">
+      <label for="gh-path">Data file path</label>
+      <input type="text" id="gh-path" value="data/tasks.json">
+    </div>
+    <div class="field">
+      <label for="gh-token">Personal access token (Contents: read &amp; write, scoped to this repo only)</label>
+      <input type="password" id="gh-token" autocomplete="off">
+    </div>
+
+    <button class="btn btn-primary" id="setup-save-btn">Save &amp; connect</button>
+    <div class="error-msg" id="setup-error"></div>
+    <p class="hint">Create a fine-grained token at
+      <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a>
+      — repository access: only this repository, permission: Contents → Read and write. See the README for the full walkthrough.</p>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+  <header class="topbar">
+    <h1>Capture → Today</h1>
+    <div class="topbar-actions">
+      <div class="sync-status"><span class="sync-dot" id="sync-dot"></span><span id="sync-text">idle</span></div>
+      <button class="icon-btn" id="export-btn" title="Download backup JSON">⬇</button>
+      <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <div class="capture-bar">
+    <input type="text" id="capture-input" placeholder="Capture anything… press Enter to add to Capture">
+    <button id="capture-add-btn">Add</button>
+  </div>
+
+  <main class="board">
+    <section class="column" id="col-capture">
+      <div class="column-head">
+        <div class="title"><span class="dot capture"></span>Capture<span class="count" id="count-capture"></span></div>
+      </div>
+      <div class="column-body" id="body-capture" data-bucket="capture"></div>
+    </section>
+
+    <section class="column" id="col-today">
+      <div class="column-head">
+        <div class="title"><span class="dot today"></span>Priority / Today<span class="count" id="count-today"></span></div>
+      </div>
+      <div class="column-body" id="body-today" data-bucket="today"></div>
+    </section>
+  </main>
+
+  <div style="max-width:1100px;margin:0 auto;padding:0 20px 40px;">
+    <div class="archive-toggle" id="archive-toggle" style="margin:0;">▾ Show done / archive (<span id="count-done">0</span>)</div>
+    <section class="column" id="col-done" style="display:none;margin-top:10px;">
+      <div class="column-head">
+        <div class="title"><span class="dot done"></span>Done<span class="count" id="count-done-2"></span></div>
+        <button class="mini-btn" id="clear-done-btn">Clear all done</button>
+      </div>
+      <div class="column-body" id="body-done" data-bucket="done"></div>
+    </section>
+  </div>
+</div>
+
+<!-- ============ SETTINGS MODAL ============ -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal">
+    <h2>Settings</h2>
+    <div class="field">
+      <label for="s-gh-owner">GitHub username</label>
+      <input type="text" id="s-gh-owner">
+    </div>
+    <div class="field">
+      <label for="s-gh-repo">Repository name</label>
+      <input type="text" id="s-gh-repo">
+    </div>
+    <div class="field">
+      <label for="s-gh-branch">Branch</label>
+      <input type="text" id="s-gh-branch">
+    </div>
+    <div class="field">
+      <label for="s-gh-path">Data file path</label>
+      <input type="text" id="s-gh-path">
+    </div>
+    <div class="field">
+      <label for="s-gh-token">Personal access token</label>
+      <input type="password" id="s-gh-token" placeholder="Leave blank to keep current token">
+    </div>
+    <hr class="sep">
+    <div class="field">
+      <label for="s-new-passcode">Change passcode (leave blank to keep current)</label>
+      <input type="password" id="s-new-passcode">
+    </div>
+    <div class="error-msg" id="settings-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="settings-save-btn">Save</button>
+    </div>
+    <hr class="sep">
+    <button class="btn btn-danger" id="settings-reset-btn" style="width:100%;">Forget this device (sign out)</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- Storage keys ---------------- */
+  const LS_PASSCODE_HASH = "tm_passcode_hash";
+  const LS_CONFIG = "tm_config"; // {owner, repo, branch, path, token}
+  const LS_CACHE = "tm_cache";   // last-known tasks JSON, offline fallback
+  const SS_UNLOCKED = "tm_unlocked";
+
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------------- Utilities ---------------- */
+  // Pure-JS SHA-256 (no dependency on window.crypto.subtle, which browsers only
+  // expose in a "secure context" — https, or localhost. Opening this file directly
+  // as file://index.html is NOT a secure context, so relying on crypto.subtle would
+  // leave the passcode screen stuck with no way forward. This works everywhere.
+  function sha256Hex(str){
+    function rightRotate(v,a){ return (v>>>a) | (v<<(32-a)); }
+    const K = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    const h = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+    const msg = Array.from(new TextEncoder().encode(str));
+    const bitLen = msg.length*8;
+    msg.push(0x80);
+    while(msg.length % 64 !== 56) msg.push(0);
+    const bitLenHi = Math.floor(bitLen/0x100000000), bitLenLo = bitLen>>>0;
+    for(let i=3;i>=0;i--) msg.push((bitLenHi>>>(8*i))&0xff);
+    for(let i=3;i>=0;i--) msg.push((bitLenLo>>>(8*i))&0xff);
+    for(let cs=0; cs<msg.length; cs+=64){
+      const w = new Array(64).fill(0);
+      for(let i=0;i<16;i++){
+        w[i] = ((msg[cs+i*4]<<24)|(msg[cs+i*4+1]<<16)|(msg[cs+i*4+2]<<8)|(msg[cs+i*4+3]))>>>0;
+      }
+      for(let i=16;i<64;i++){
+        const s0 = rightRotate(w[i-15],7)^rightRotate(w[i-15],18)^(w[i-15]>>>3);
+        const s1 = rightRotate(w[i-2],17)^rightRotate(w[i-2],19)^(w[i-2]>>>10);
+        w[i] = (w[i-16]+s0+w[i-7]+s1)>>>0;
+      }
+      let [a,b,c,d,e,f,g,hh] = h;
+      for(let i=0;i<64;i++){
+        const S1 = rightRotate(e,6)^rightRotate(e,11)^rightRotate(e,25);
+        const ch = (e&f)^(~e&g);
+        const temp1 = (hh+S1+ch+K[i]+w[i])>>>0;
+        const S0 = rightRotate(a,2)^rightRotate(a,13)^rightRotate(a,22);
+        const maj = (a&b)^(a&c)^(b&c);
+        const temp2 = (S0+maj)>>>0;
+        hh=g; g=f; f=e; e=(d+temp1)>>>0;
+        d=c; c=b; b=a; a=(temp1+temp2)>>>0;
+      }
+      h[0]=(h[0]+a)>>>0; h[1]=(h[1]+b)>>>0; h[2]=(h[2]+c)>>>0; h[3]=(h[3]+d)>>>0;
+      h[4]=(h[4]+e)>>>0; h[5]=(h[5]+f)>>>0; h[6]=(h[6]+g)>>>0; h[7]=(h[7]+hh)>>>0;
+    }
+    return h.map(x=>x.toString(16).padStart(8,"0")).join("");
+  }
+
+  function b64EncodeUnicode(str){
+    const bytes = new TextEncoder().encode(str);
+    let binary = "";
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+  }
+  function b64DecodeUnicode(b64){
+    const binary = atob(b64.replace(/\n/g, ""));
+    const bytes = new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function uid(){
+    return "t_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,8);
+  }
+
+  function todayStr(){
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+
+  let toastTimer = null;
+  function toast(msg){
+    const el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  function getConfig(){
+    try{ return JSON.parse(localStorage.getItem(LS_CONFIG) || "null"); }catch(e){ return null; }
+  }
+  function setConfig(cfg){ localStorage.setItem(LS_CONFIG, JSON.stringify(cfg)); }
+
+  /* ---------------- State ---------------- */
+  let state = { version:1, tasks:[] };
+  let remoteSha = null;
+  let saveTimer = null;
+  let saving = false;
+  let dirty = false;
+  let showDone = false;
+
+  /* ---------------- GitHub API ---------------- */
+  function apiHeaders(cfg){
+    return {
+      "Authorization": "Bearer " + cfg.token,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json"
+    };
+  }
+  function contentsUrl(cfg){
+    return `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${cfg.path.split("/").map(encodeURIComponent).join("/")}`;
+  }
+
+  async function fetchRemote(cfg){
+    const res = await fetch(contentsUrl(cfg) + `?ref=${encodeURIComponent(cfg.branch)}&_=${Date.now()}`, {
+      headers: apiHeaders(cfg), cache:"no-store"
+    });
+    if(res.status === 404){
+      return { tasks: null, sha: null }; // file doesn't exist yet
+    }
+    if(!res.ok){
+      const body = await res.text().catch(()=> "");
+      throw new Error(`GitHub GET failed (${res.status}): ${body.slice(0,200)}`);
+    }
+    const json = await res.json();
+    const text = b64DecodeUnicode(json.content);
+    let parsed;
+    try{ parsed = JSON.parse(text); }catch(e){ throw new Error("tasks.json is not valid JSON"); }
+    return { tasks: parsed, sha: json.sha };
+  }
+
+  async function putRemote(cfg, data, sha){
+    const body = {
+      message: "Update tasks (" + new Date().toISOString() + ")",
+      content: b64EncodeUnicode(JSON.stringify(data, null, 2)),
+      branch: cfg.branch
+    };
+    if(sha) body.sha = sha;
+    const res = await fetch(contentsUrl(cfg), {
+      method:"PUT", headers: apiHeaders(cfg), body: JSON.stringify(body)
+    });
+    if(!res.ok){
+      const errBody = await res.json().catch(()=>({}));
+      const err = new Error(`GitHub PUT failed (${res.status}): ${errBody.message || ""}`);
+      err.status = res.status;
+      throw err;
+    }
+    const json = await res.json();
+    return json.content.sha;
+  }
+
+  function setSyncStatus(kind, text){
+    const dot = $("sync-dot");
+    dot.className = "sync-dot" + (kind ? " " + kind : "");
+    $("sync-text").textContent = text;
+  }
+
+  async function loadFromRemote(){
+    const cfg = getConfig();
+    if(!cfg) return;
+    setSyncStatus("busy", "loading…");
+    try{
+      const { tasks, sha } = await fetchRemote(cfg);
+      remoteSha = sha;
+      if(tasks === null){
+        // File doesn't exist yet — create it with whatever we have locally (or empty).
+        state = state && state.tasks ? state : { version:1, tasks:[] };
+        remoteSha = await putRemote(cfg, state, null);
+        setSyncStatus("ok", "created data file");
+      } else {
+        state = tasks;
+        localStorage.setItem(LS_CACHE, JSON.stringify(state));
+        setSyncStatus("ok", "synced");
+      }
+      render();
+    }catch(err){
+      console.error(err);
+      const cached = localStorage.getItem(LS_CACHE);
+      if(cached){ state = JSON.parse(cached); render(); }
+      setSyncStatus("err", "offline / sync error");
+      toast("Could not reach GitHub — showing last saved copy.");
+    }
+  }
+
+  function scheduleSave(){
+    dirty = true;
+    setSyncStatus("busy", "unsaved changes…");
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 900);
+  }
+
+  async function saveNow(retry){
+    const cfg = getConfig();
+    if(!cfg || saving) return;
+    saving = true;
+    dirty = false;
+    setSyncStatus("busy", "saving…");
+    try{
+      localStorage.setItem(LS_CACHE, JSON.stringify(state));
+      remoteSha = await putRemote(cfg, state, remoteSha);
+      setSyncStatus("ok", "saved");
+    }catch(err){
+      console.error(err);
+      if(err.status === 409 && !retry){
+        // Someone else (another device/tab) wrote first — refetch sha and retry once.
+        try{
+          const fresh = await fetchRemote(cfg);
+          remoteSha = fresh.sha;
+          saving = false;
+          return saveNow(true);
+        }catch(e2){ /* fall through to error state */ }
+      }
+      setSyncStatus("err", "save failed — will retry");
+      toast("Couldn't save to GitHub. Check your connection or token in Settings.");
+      // retry later
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveNow, 5000);
+    }finally{
+      saving = false;
+      if(dirty){ clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 900); }
+    }
+  }
+
+  window.addEventListener("beforeunload", () => {
+    if(dirty){
+      // best-effort synchronous-ish save; browsers may not wait for fetch, but try.
+      saveNow();
+    }
+  });
+  window.addEventListener("visibilitychange", () => {
+    if(document.visibilityState === "visible" && !dirty && !saving){
+      loadFromRemote();
+    }
+  });
+
+  /* ---------------- Task operations ---------------- */
+  function addTask(text){
+    text = text.trim();
+    if(!text) return;
+    state.tasks.push({
+      id: uid(), text, bucket:"capture", due:null, priority:false,
+      createdAt: new Date().toISOString(), completedAt:null
+    });
+    render(); scheduleSave();
+  }
+  function updateTask(id, patch){
+    const t = state.tasks.find(t => t.id === id);
+    if(!t) return;
+    Object.assign(t, patch);
+    render(); scheduleSave();
+  }
+  function moveTask(id, bucket){
+    const t = state.tasks.find(t => t.id === id);
+    if(!t) return;
+    t.bucket = bucket;
+    t.completedAt = bucket === "done" ? new Date().toISOString() : null;
+    render(); scheduleSave();
+  }
+  function deleteTask(id){
+    state.tasks = state.tasks.filter(t => t.id !== id);
+    render(); scheduleSave();
+  }
+  function clearDone(){
+    if(!confirm("Permanently delete all tasks in Done? This can't be undone.")) return;
+    state.tasks = state.tasks.filter(t => t.bucket !== "done");
+    render(); scheduleSave();
+  }
+
+  /* ---------------- Rendering ---------------- */
+  function dueClass(due){
+    if(!due) return "";
+    if(due < todayStr()) return "overdue";
+    if(due === todayStr()) return "today-due";
+    return "";
+  }
+  function dueLabel(due){
+    if(!due) return "+ due date";
+    if(due === todayStr()) return "Today";
+    const d = new Date(due + "T00:00:00");
+    return d.toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+  }
+
+  function taskEl(t){
+    const el = document.createElement("div");
+    el.className = "task" + (t.priority ? " priority" : "") + (t.bucket==="done" ? " done" : "");
+    el.draggable = true;
+    el.dataset.id = t.id;
+
+    const row = document.createElement("div");
+    row.className = "task-row";
+
+    const check = document.createElement("button");
+    check.className = "task-check";
+    check.title = t.bucket === "done" ? "Restore" : "Mark done";
+    check.addEventListener("click", () => moveTask(t.id, t.bucket === "done" ? "capture" : "done"));
+    row.appendChild(check);
+
+    const text = document.createElement("div");
+    text.className = "task-text";
+    text.contentEditable = "true";
+    text.spellcheck = false;
+    text.textContent = t.text;
+    text.addEventListener("blur", () => {
+      const val = text.textContent.trim();
+      if(val && val !== t.text) updateTask(t.id, { text: val });
+      else text.textContent = t.text;
+    });
+    text.addEventListener("keydown", (e) => {
+      if(e.key === "Enter"){ e.preventDefault(); text.blur(); }
+    });
+    row.appendChild(text);
+
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+
+    if(t.bucket !== "done"){
+      const moveBtn = document.createElement("button");
+      moveBtn.className = "mini-btn";
+      moveBtn.textContent = t.bucket === "capture" ? "→ Today" : "← Capture";
+      moveBtn.title = t.bucket === "capture" ? "Move to Today" : "Move back to Capture";
+      moveBtn.addEventListener("click", () => moveTask(t.id, t.bucket === "capture" ? "today" : "capture"));
+      actions.appendChild(moveBtn);
+    }
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "mini-btn del";
+    delBtn.textContent = "✕";
+    delBtn.title = "Delete";
+    delBtn.addEventListener("click", () => { if(confirm("Delete this task?")) deleteTask(t.id); });
+    actions.appendChild(delBtn);
+
+    row.appendChild(actions);
+    el.appendChild(row);
+
+    const meta = document.createElement("div");
+    meta.className = "task-meta";
+
+    const star = document.createElement("button");
+    star.className = "star-btn" + (t.priority ? " on" : "");
+    star.textContent = t.priority ? "★" : "☆";
+    star.title = "Toggle priority";
+    star.addEventListener("click", () => updateTask(t.id, { priority: !t.priority }));
+    meta.appendChild(star);
+
+    const chip = document.createElement("span");
+    chip.className = "due-chip " + dueClass(t.due);
+    chip.textContent = dueLabel(t.due);
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.className = "due-input";
+    dateInput.value = t.due || "";
+    dateInput.style.display = "none";
+    chip.addEventListener("click", () => { chip.style.display = "none"; dateInput.style.display = "inline-block"; dateInput.focus(); });
+    dateInput.addEventListener("change", () => { updateTask(t.id, { due: dateInput.value || null }); });
+    dateInput.addEventListener("blur", () => { dateInput.style.display = "none"; chip.style.display = "inline-block"; });
+    meta.appendChild(chip);
+    meta.appendChild(dateInput);
+
+    el.appendChild(meta);
+
+    el.addEventListener("dragstart", (e) => {
+      el.classList.add("dragging");
+      e.dataTransfer.setData("text/plain", t.id);
+      e.dataTransfer.effectAllowed = "move";
+    });
+    el.addEventListener("dragend", () => el.classList.remove("dragging"));
+
+    return el;
+  }
+
+  function sortCapture(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); }
+  function sortToday(a,b){
+    if(a.priority !== b.priority) return a.priority ? -1 : 1;
+    if(!a.due && !b.due) return new Date(a.createdAt) - new Date(b.createdAt);
+    if(!a.due) return 1;
+    if(!b.due) return -1;
+    return a.due < b.due ? -1 : a.due > b.due ? 1 : 0;
+  }
+  function sortDone(a,b){ return new Date(b.completedAt||0) - new Date(a.completedAt||0); }
+
+  function render(){
+    const capture = state.tasks.filter(t => t.bucket === "capture").sort(sortCapture);
+    const today = state.tasks.filter(t => t.bucket === "today").sort(sortToday);
+    const done = state.tasks.filter(t => t.bucket === "done").sort(sortDone);
+
+    fillColumn("body-capture", capture, "Nothing captured. Type above to add something.");
+    fillColumn("body-today", today, "Nothing prioritised yet — move things over from Capture.");
+    fillColumn("body-done", done, "Nothing done yet.");
+
+    $("count-capture").textContent = capture.length ? `(${capture.length})` : "";
+    $("count-today").textContent = today.length ? `(${today.length})` : "";
+    $("count-done").textContent = done.length;
+    $("count-done-2").textContent = done.length ? `(${done.length})` : "";
+  }
+
+  function fillColumn(bodyId, tasks, emptyText){
+    const body = $(bodyId);
+    body.innerHTML = "";
+    if(tasks.length === 0){
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = emptyText;
+      body.appendChild(hint);
+      return;
+    }
+    tasks.forEach(t => body.appendChild(taskEl(t)));
+  }
+
+  /* Drag & drop onto columns */
+  [ "body-capture", "body-today", "body-done" ].forEach(id => {
+    const el = $(id);
+    el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("dragover"); });
+    el.addEventListener("dragleave", () => el.classList.remove("dragover"));
+    el.addEventListener("drop", (e) => {
+      e.preventDefault();
+      el.classList.remove("dragover");
+      const id2 = e.dataTransfer.getData("text/plain");
+      if(id2) moveTask(id2, el.dataset.bucket);
+    });
+  });
+
+  $("archive-toggle").addEventListener("click", () => {
+    showDone = !showDone;
+    $("col-done").style.display = showDone ? "flex" : "none";
+    const label = showDone ? "Hide" : "Show";
+    $("archive-toggle").innerHTML = (showDone ? "▴" : "▾") + ` ${label} done / archive (<span id="count-done">${state.tasks.filter(t=>t.bucket==="done").length}</span>)`;
+  });
+  $("clear-done-btn").addEventListener("click", clearDone);
+
+  /* ---------------- Capture bar ---------------- */
+  $("capture-add-btn").addEventListener("click", () => {
+    addTask($("capture-input").value);
+    $("capture-input").value = "";
+    $("capture-input").focus();
+  });
+  $("capture-input").addEventListener("keydown", (e) => {
+    if(e.key === "Enter"){
+      addTask($("capture-input").value);
+      $("capture-input").value = "";
+    }
+  });
+
+  /* ---------------- Export ---------------- */
+  $("export-btn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `tasks-backup-${todayStr()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  /* ---------------- Settings modal ---------------- */
+  $("settings-btn").addEventListener("click", () => {
+    const cfg = getConfig() || {};
+    $("s-gh-owner").value = cfg.owner || "";
+    $("s-gh-repo").value = cfg.repo || "";
+    $("s-gh-branch").value = cfg.branch || "main";
+    $("s-gh-path").value = cfg.path || "data/tasks.json";
+    $("s-gh-token").value = "";
+    $("s-new-passcode").value = "";
+    $("settings-error").textContent = "";
+    $("settings-modal").classList.add("show");
+  });
+  $("settings-cancel-btn").addEventListener("click", () => $("settings-modal").classList.remove("show"));
+
+  $("settings-save-btn").addEventListener("click", async () => {
+    const owner = $("s-gh-owner").value.trim();
+    const repo = $("s-gh-repo").value.trim();
+    const branch = $("s-gh-branch").value.trim() || "main";
+    const path = $("s-gh-path").value.trim() || "data/tasks.json";
+    const tokenInput = $("s-gh-token").value.trim();
+    if(!owner || !repo){ $("settings-error").textContent = "Username and repository are required."; return; }
+    const cfg = getConfig() || {};
+    const newCfg = { owner, repo, branch, path, token: tokenInput || cfg.token };
+    if(!newCfg.token){ $("settings-error").textContent = "A personal access token is required."; return; }
+    setConfig(newCfg);
+
+    const newPass = $("s-new-passcode").value;
+    if(newPass){
+      localStorage.setItem(LS_PASSCODE_HASH, await sha256Hex(newPass));
+    }
+    $("settings-modal").classList.remove("show");
+    toast("Settings saved.");
+    loadFromRemote();
+  });
+
+  $("settings-reset-btn").addEventListener("click", () => {
+    if(!confirm("This clears the saved passcode, GitHub connection, and local cache on THIS device only. Your data in GitHub is untouched. Continue?")) return;
+    localStorage.removeItem(LS_PASSCODE_HASH);
+    localStorage.removeItem(LS_CONFIG);
+    localStorage.removeItem(LS_CACHE);
+    sessionStorage.removeItem(SS_UNLOCKED);
+    location.reload();
+  });
+
+  /* ---------------- Lock / setup flow ---------------- */
+  async function init(){
+    try{
+      const hasPasscode = !!localStorage.getItem(LS_PASSCODE_HASH);
+      const hasConfig = !!getConfig();
+
+      if(!hasPasscode || !hasConfig){
+        $("lock-screen").style.display = "none";
+        $("setup-screen").style.display = "flex";
+        return;
+      }
+
+      if(sessionStorage.getItem(SS_UNLOCKED) === "1"){
+        showApp();
+        return;
+      }
+
+      $("lock-screen").style.display = "flex";
+    }catch(err){
+      // Never leave the visitor stuck on a blank/frozen screen — fall back to setup
+      // and surface the problem in the console for debugging.
+      console.error("init() failed:", err);
+      $("lock-screen").style.display = "none";
+      $("setup-screen").style.display = "flex";
+      $("setup-error").textContent = "Something went wrong loading saved settings (" + err.message + "). You can set up again below.";
+    }
+  }
+
+  $("unlock-btn").addEventListener("click", tryUnlock);
+  $("passcode-input").addEventListener("keydown", (e) => { if(e.key === "Enter") tryUnlock(); });
+  async function tryUnlock(){
+    try{
+      const val = $("passcode-input").value;
+      const hash = await sha256Hex(val);
+      const stored = localStorage.getItem(LS_PASSCODE_HASH);
+      if(hash === stored){
+        sessionStorage.setItem(SS_UNLOCKED, "1");
+        $("lock-error").textContent = "";
+        showApp();
+      } else {
+        $("lock-error").textContent = "Incorrect passcode.";
+        $("passcode-input").value = "";
+      }
+    }catch(err){
+      console.error("tryUnlock failed:", err);
+      $("lock-error").textContent = "Something went wrong checking the passcode (" + err.message + ").";
+    }
+  }
+
+  $("setup-save-btn").addEventListener("click", async () => {
+    const pass = $("setup-passcode").value;
+    const owner = $("gh-owner").value.trim();
+    const repo = $("gh-repo").value.trim();
+    const branch = $("gh-branch").value.trim() || "main";
+    const path = $("gh-path").value.trim() || "data/tasks.json";
+    const token = $("gh-token").value.trim();
+    if(!pass || pass.length < 4){ $("setup-error").textContent = "Choose a passcode of at least 4 characters."; return; }
+    if(!owner || !repo || !token){ $("setup-error").textContent = "Username, repository, and token are all required."; return; }
+
+    localStorage.setItem(LS_PASSCODE_HASH, await sha256Hex(pass));
+    setConfig({ owner, repo, branch, path, token });
+    sessionStorage.setItem(SS_UNLOCKED, "1");
+    showApp();
+  });
+
+  function showApp(){
+    $("lock-screen").style.display = "none";
+    $("setup-screen").style.display = "none";
+    $("app").style.display = "block";
+    const cached = localStorage.getItem(LS_CACHE);
+    if(cached){ try{ state = JSON.parse(cached); render(); }catch(e){} }
+    loadFromRemote();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
