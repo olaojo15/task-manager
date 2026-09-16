@@ -100,6 +100,9 @@
     padding:10px 10px 8px;cursor:grab;}
   .task.dragging{opacity:0.4;}
   .task.priority{border-left:3px solid var(--warn);}
+  .task.subtask{background:color-mix(in srgb, var(--panel) 55%, var(--bg));}
+  .breadcrumb{color:var(--muted);font-size:11px;margin:0 0 4px;cursor:pointer;}
+  .breadcrumb:hover{text-decoration:underline;}
   .task-row{display:flex;align-items:flex-start;gap:8px;}
   .task-check{width:19px;height:19px;border-radius:50%;border:2px solid var(--muted);
     background:transparent;flex:none;cursor:pointer;margin-top:1px;}
@@ -120,6 +123,9 @@
   .star-btn{background:transparent;border:none;cursor:pointer;font-size:14px;color:var(--muted);
     padding:1px 3px;}
   .star-btn.on{color:var(--warn);}
+  .expand-pill{background:var(--panel);border:1px solid var(--border);border-radius:20px;
+    padding:2px 8px;font-size:11px;color:var(--muted);cursor:pointer;font-weight:600;}
+  .expand-pill:hover{background:var(--bg);color:var(--text);}
   .task-actions{margin-left:auto;display:flex;gap:2px;}
   .mini-btn{background:transparent;border:none;cursor:pointer;color:var(--muted);
     font-size:13px;padding:2px 5px;border-radius:5px;}
@@ -138,8 +144,20 @@
   .modal{background:var(--panel);border-radius:var(--radius);max-width:420px;width:100%;
     padding:24px;max-height:90vh;overflow:auto;}
   .modal h2{font-size:16px;margin:0 0 16px;}
+  .modal .modal-sub{color:var(--muted);font-size:12px;margin:-10px 0 14px;}
   .modal-actions{display:flex;gap:8px;margin-top:18px;}
   .modal-actions .btn{flex:1;}
+  .child-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);}
+  .child-row:last-of-type{border-bottom:none;}
+  .child-row .txt{flex:1;font-size:13.5px;}
+  .child-row.is-done .txt{color:var(--muted);text-decoration:line-through;}
+  .child-row .bucket-label{font-size:10.5px;color:var(--muted);width:46px;flex:none;text-align:right;}
+  .child-actions{display:flex;gap:1px;flex:none;}
+  .add-sub-row{display:flex;gap:6px;margin-top:14px;}
+  .add-sub-row input{flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:13px;
+    background:var(--bg);color:var(--text);}
+  .add-sub-row button{padding:7px 12px;border-radius:7px;border:none;background:var(--accent);
+    color:var(--accent-ink);font-weight:700;font-size:13px;cursor:pointer;}
 
   .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
     background:var(--text);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;
@@ -290,6 +308,22 @@
     </div>
     <hr class="sep">
     <button class="btn btn-danger" id="settings-reset-btn" style="width:100%;">Forget this device (sign out)</button>
+  </div>
+</div>
+
+<!-- ============ SUBTASK MODAL ============ -->
+<div class="modal-backdrop" id="subtask-modal">
+  <div class="modal">
+    <h2 id="subtask-modal-title"></h2>
+    <p class="modal-sub">All subtasks, wherever they currently live.</p>
+    <div id="subtask-modal-list"></div>
+    <div class="add-sub-row">
+      <input type="text" id="subtask-new-input" placeholder="Add a subtask… (lands in Capture)">
+      <button id="subtask-add-btn">Add</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="subtask-modal-close-btn" style="width:100%;">Close</button>
+    </div>
   </div>
 </div>
 
@@ -553,6 +587,22 @@
     });
     render(); scheduleSave();
   }
+  function children(id){ return state.tasks.filter(t => t.parentId === id); }
+  function parentOf(t){ return state.tasks.find(x => x.id === t.parentId); }
+  function hasChildren(t){ return children(t.id).length > 0; }
+  function subtaskProgress(t){
+    const kids = children(t.id);
+    return { done: kids.filter(k => k.bucket === "done").length, total: kids.length };
+  }
+  function addSubtask(parentId, text){
+    text = (text || "").trim();
+    if(!text) return;
+    state.tasks.push({
+      id: uid(), text, bucket:"capture", due:null, priority:false, parentId,
+      createdAt: new Date().toISOString(), completedAt:null
+    });
+    render(); scheduleSave();
+  }
   function updateTask(id, patch){
     const t = state.tasks.find(t => t.id === id);
     if(!t) return;
@@ -567,8 +617,23 @@
     render(); scheduleSave();
   }
   function deleteTask(id){
-    state.tasks = state.tasks.filter(t => t.id !== id);
+    const t = state.tasks.find(x => x.id === id);
+    if(!t) return;
+    const kids = children(id);
+    if(kids.length){
+      const openKids = kids.filter(k => k.bucket !== "done");
+      const msg = openKids.length
+        ? `"${t.text}" has ${openKids.length} open subtask(s) — delete it and all its subtasks?`
+        : `Delete "${t.text}" and its ${kids.length} completed subtask(s)?`;
+      if(!confirm(msg)) return;
+      const ids = new Set([id, ...kids.map(k => k.id)]);
+      state.tasks = state.tasks.filter(x => !ids.has(x.id));
+    } else {
+      if(!confirm(`Delete "${t.text}"?`)) return;
+      state.tasks = state.tasks.filter(x => x.id !== id);
+    }
     render(); scheduleSave();
+    if(currentSubtaskParent && !state.tasks.some(x => x.id === currentSubtaskParent)) closeSubtaskModal();
   }
   function clearDone(){
     if(!confirm("Permanently delete all tasks in Done? This can't be undone.")) return;
@@ -592,9 +657,21 @@
 
   function taskEl(t){
     const el = document.createElement("div");
-    el.className = "task" + (t.priority ? " priority" : "") + (t.bucket==="done" ? " done" : "");
+    el.className = "task" + (t.priority ? " priority" : "") + (t.bucket==="done" ? " done" : "")
+      + (t.parentId ? " subtask" : "");
     el.draggable = true;
     el.dataset.id = t.id;
+
+    if(t.parentId){
+      const p = parentOf(t);
+      if(p){
+        const crumb = document.createElement("div");
+        crumb.className = "breadcrumb";
+        crumb.textContent = "↳ " + p.text;
+        crumb.addEventListener("click", () => openSubtaskModal(p.id));
+        el.appendChild(crumb);
+      }
+    }
 
     const row = document.createElement("div");
     row.className = "task-row";
@@ -647,7 +724,7 @@
     delBtn.className = "mini-btn del";
     delBtn.textContent = "✕";
     delBtn.title = "Delete";
-    delBtn.addEventListener("click", () => { if(confirm("Delete this task?")) deleteTask(t.id); });
+    delBtn.addEventListener("click", () => deleteTask(t.id));
     actions.appendChild(delBtn);
 
     row.appendChild(actions);
@@ -677,6 +754,26 @@
     meta.appendChild(chip);
     meta.appendChild(dateInput);
 
+    if(hasChildren(t)){
+      const prog = subtaskProgress(t);
+      const pill = document.createElement("button");
+      pill.className = "expand-pill";
+      pill.textContent = `${prog.done}/${prog.total} ▾`;
+      pill.title = "View subtasks";
+      pill.addEventListener("click", () => openSubtaskModal(t.id));
+      meta.appendChild(pill);
+    }
+
+    if(!t.parentId){
+      const addSubBtn = document.createElement("button");
+      addSubBtn.className = "mini-btn";
+      addSubBtn.style.marginLeft = "auto";
+      addSubBtn.textContent = "+ subtask";
+      addSubBtn.title = "Add a subtask";
+      addSubBtn.addEventListener("click", () => openSubtaskModal(t.id));
+      meta.appendChild(addSubBtn);
+    }
+
     el.appendChild(meta);
 
     el.addEventListener("dragstart", (e) => {
@@ -700,7 +797,7 @@
   function sortDone(a,b){ return new Date(b.completedAt||0) - new Date(a.completedAt||0); }
 
   function render(){
-    const capture = state.tasks.filter(t => t.bucket === "capture").sort(sortCapture);
+    const capture = state.tasks.filter(t => t.bucket === "capture" && !t.parentId).sort(sortCapture);
     const priority = state.tasks.filter(t => t.bucket === "priority").sort(sortByPriorityDue);
     const today = state.tasks.filter(t => t.bucket === "today").sort(sortByPriorityDue);
     const done = state.tasks.filter(t => t.bucket === "done").sort(sortDone);
@@ -715,6 +812,8 @@
     $("count-today").textContent = today.length ? `(${today.length})` : "";
     $("count-done").textContent = done.length;
     $("count-done-2").textContent = done.length ? `(${done.length})` : "";
+
+    if(currentSubtaskParent) refreshSubtaskModal();
   }
 
   function fillColumn(bodyId, tasks, emptyText){
@@ -729,6 +828,102 @@
     }
     tasks.forEach(t => body.appendChild(taskEl(t)));
   }
+
+  /* ---------------- Subtask pop-up ---------------- */
+  let currentSubtaskParent = null;
+  function openSubtaskModal(parentId){
+    currentSubtaskParent = parentId;
+    $("subtask-modal").classList.add("show");
+    refreshSubtaskModal();
+  }
+  function closeSubtaskModal(){
+    currentSubtaskParent = null;
+    $("subtask-modal").classList.remove("show");
+  }
+  function refreshSubtaskModal(){
+    const p = state.tasks.find(t => t.id === currentSubtaskParent);
+    if(!p){ closeSubtaskModal(); return; }
+    $("subtask-modal-title").textContent = p.text;
+    const list = $("subtask-modal-list");
+    list.innerHTML = "";
+    const kids = children(p.id);
+    if(!kids.length){
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.textContent = "No subtasks yet.";
+      list.appendChild(hint);
+    } else {
+      kids.forEach(k => list.appendChild(subtaskRow(k)));
+    }
+  }
+  function subtaskRow(k){
+    const row = document.createElement("div");
+    row.className = "child-row" + (k.bucket === "done" ? " is-done" : "");
+
+    const dot = document.createElement("span");
+    dot.className = "dot " + k.bucket;
+    row.appendChild(dot);
+
+    const txt = document.createElement("span");
+    txt.className = "txt";
+    txt.textContent = k.text;
+    row.appendChild(txt);
+
+    const label = document.createElement("span");
+    label.className = "bucket-label";
+    label.textContent = k.bucket === "done" ? "Done" : bucketLabel(k.bucket);
+    row.appendChild(label);
+
+    const actions = document.createElement("span");
+    actions.className = "child-actions";
+
+    const check = document.createElement("button");
+    check.className = "mini-btn";
+    check.title = k.bucket === "done" ? "Restore" : "Mark done";
+    check.textContent = k.bucket === "done" ? "↩" : "✓";
+    check.addEventListener("click", () => moveTask(k.id, k.bucket === "done" ? "capture" : "done"));
+    actions.appendChild(check);
+
+    if(k.bucket !== "done"){
+      const idx = BUCKET_ORDER.indexOf(k.bucket);
+      if(idx > 0){
+        const back = document.createElement("button");
+        back.className = "mini-btn";
+        back.textContent = "←";
+        back.title = "Move to " + bucketLabel(BUCKET_ORDER[idx-1]);
+        back.addEventListener("click", () => moveTask(k.id, BUCKET_ORDER[idx-1]));
+        actions.appendChild(back);
+      }
+      if(idx < BUCKET_ORDER.length - 1){
+        const fwd = document.createElement("button");
+        fwd.className = "mini-btn";
+        fwd.textContent = "→";
+        fwd.title = "Move to " + bucketLabel(BUCKET_ORDER[idx+1]);
+        fwd.addEventListener("click", () => moveTask(k.id, BUCKET_ORDER[idx+1]));
+        actions.appendChild(fwd);
+      }
+    }
+
+    const del = document.createElement("button");
+    del.className = "mini-btn del";
+    del.textContent = "✕";
+    del.title = "Delete";
+    del.addEventListener("click", () => deleteTask(k.id));
+    actions.appendChild(del);
+
+    row.appendChild(actions);
+    return row;
+  }
+
+  $("subtask-modal-close-btn").addEventListener("click", closeSubtaskModal);
+  $("subtask-modal").addEventListener("click", (e) => { if(e.target.id === "subtask-modal") closeSubtaskModal(); });
+  $("subtask-add-btn").addEventListener("click", () => {
+    addSubtask(currentSubtaskParent, $("subtask-new-input").value);
+    $("subtask-new-input").value = "";
+  });
+  $("subtask-new-input").addEventListener("keydown", (e) => {
+    if(e.key === "Enter"){ e.preventDefault(); $("subtask-add-btn").click(); }
+  });
 
   /* Drag & drop onto columns */
   [ "body-capture", "body-priority", "body-today", "body-done" ].forEach(id => {
